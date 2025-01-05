@@ -6,19 +6,21 @@
     <script src="https://www.puck-js.com/puck.js"></script>
     <button id="btnConnect">Connect</button>
     <button id="btnDisconnect">Disconnect</button>
-    <button id="btnCalibrtr">Calibrate</button><br>
+    <button id="btnCalibrtr">Calibrate magnetometer</button>
+    <button id="btnCalibGyro">Calibrate gyroscope</button><br>
     <span>Battery level: <span id="battLevelSpan"></span></span><br>
     <span>other data: <span id="otherData"></span></span><br>
-    <span>good magnet: <span id="goodMagnet"></span></span><br>
     <span>Algorithm: <span id="algorithm"></span></span><br>
     <span>Calibrating: <span id="caliCounter"></span></span>
-    <table>
+    <table border="1">
       <tr>
         <td> </td>
         <td> Gyroscope </td>
         <td> Accelerometer </td>
         <td> Magnetometer </td>
         <td> Calibrated Mag </td>
+        <td> Cal. Rotated Mag </td>
+        <td> Gyro offset </td>
       </tr>
       <tr>
         <td> X </td>
@@ -26,6 +28,8 @@
         <td> <span id="tdAccelX">     </span> </td>
         <td> <span id="tdMagX">       </span> </td>
         <td> <span id="tdCalibMagX">  </span> </td>
+        <td> <span id="tdCaRoMagX">  </span> </td>
+        <td> <span id="tdGyroOffX">      </span> </td>
       </tr>
       <tr>
         <td> Y </td>
@@ -33,6 +37,8 @@
         <td> <span id="tdAccelY">     </span> </td>
         <td> <span id="tdMagY">       </span> </td>
         <td> <span id="tdCalibMagY">  </span> </td>
+        <td> <span id="tdCaRoMagY">  </span> </td>
+        <td> <span id="tdGyroOffY">      </span> </td>
       </tr>
       <tr>
         <td> Z </td>
@@ -40,6 +46,8 @@
         <td> <span id="tdAccelZ">     </span> </td>
         <td> <span id="tdMagZ">       </span> </td>
         <td> <span id="tdCalibMagZ">  </span> </td>
+        <td> <span id="tdCaRoMagZ">  </span> </td>
+        <td> <span id="tdGyroOffZ">      </span> </td>
       </tr>
       <tr>
         <td> abs </td>
@@ -47,6 +55,8 @@
         <td> <span id="tdAccelABS">     </span> </td>
         <td> <span id="tdMagABS">       </span> </td>
         <td> <span id="tdCalibMagABS">  </span> </td>
+        <td> <span id="tdCaRoMagABS">  </span> </td>
+        <td> <span id="tdGyroOffABS">      </span> </td>
       </tr>
     </table>
     <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
@@ -67,7 +77,6 @@ const deltat = 1/hz;        // Change in time
 const battLevelSpan = document.getElementById('battLevelSpan');
 const otherData = document.getElementById('otherData');
 const algorithm = document.getElementById('algorithm');
-const goodMagnet = document.getElementById('goodMagnet');
 const caliCounter = document.getElementById('caliCounter');
 
 // Code to upload to Puck.js
@@ -129,6 +138,8 @@ Puck.on('accel',function(a) {
 var accel = new THREE.Vector3( 0, 0, 0);
 var accel_rot = new THREE.Vector3( 0, 0, 0);
 var gyro = new THREE.Vector3(0, 0, 0);
+var gyro_off = new THREE.Vector3(0, 0, 0);
+var gyro_cali = new THREE.Vector3(0, 0, 0);
 var mag = new THREE.Vector3(0, 0, 0);
 var mag_cali = new THREE.Vector3(0, 0, 0);
 var mag_cali_rot = new THREE.Vector3(0, 0, 0);
@@ -141,9 +152,9 @@ var battery = 100;
 // Quaternion to hold rotation data
 var rotation = new THREE.Quaternion(0, 0, 0, 1);
 
-// For holding calibration data
+// For holding mag calibration data
 var magneto_data = [];
-var calibrating = false;
+var calibrating_mag = false;
 var calibrating_counter;
 var cd = {
     matrix: [ [ 0.572, -0.077, -0.138],
@@ -176,6 +187,10 @@ function calibrate(data) {
 calibrate(cd);
 caliCounter.innerText = JSON.stringify(cd);
 
+// For holding gyro calibration data
+var calibrating_gyro = false;
+var gyro_counter = 0;
+
 
 // data for the Madgwick algorithm
 frame = {
@@ -199,8 +214,8 @@ frame = {
     w_bx: 0,
     w_by: 0,
     w_bz: 0,
-    beta: 1*Math.sqrt(3.0 / 4.0),
-    zeta: 1*Math.sqrt(3.0 / 4.0),
+    beta: 1*Math.sqrt(3.0 / 4.0) * 3.14159265358979 * (50 / 180),
+    zeta: 1*Math.sqrt(3.0 / 4.0) * 3.14159265358979 * (2 / 180),
     //beta: 0,
     //zeta: 0,
     still: 0,
@@ -259,7 +274,13 @@ document.getElementById("btnConnect").addEventListener("click", function()
 // magnetocalibration:
 document.getElementById("btnCalibrtr").addEventListener("click", function() 
 {
-    calibrating = true;
+    calibrating_mag = true;
+});
+
+// gyroocalibration:
+document.getElementById("btnCalibGyro").addEventListener("click", function() 
+{
+    calibrating_gyro = true;
 });
 
 // When we get a line of data, check it and if it's
@@ -290,14 +311,19 @@ function onLine(line)
             = accel.length().toFixed(4);
 
         // Gyroscope
-        gyro.x = parseInt(d[4]) * gyro_factor;
-        gyro.y = parseInt(d[5]) * gyro_factor;
-        gyro.z = parseInt(d[6]) * gyro_factor;
+        gyro.x = (parseInt(d[4])) * gyro_factor - gyro_off.x;
+        gyro.y = (parseInt(d[5])) * gyro_factor - gyro_off.y;
+        gyro.z = (parseInt(d[6])) * gyro_factor - gyro_off.z;
         document.getElementById('tdGyroX').innerText = gyro.x.toFixed(4);
         document.getElementById('tdGyroY').innerText = gyro.y.toFixed(4);
         document.getElementById('tdGyroZ').innerText = gyro.z.toFixed(4);
         document.getElementById('tdGyroABS').innerText
             = gyro.length().toFixed(4);
+        document.getElementById('tdGyroOffX').innerText = gyro_off.x.toFixed(4);
+        document.getElementById('tdGyroOffY').innerText = gyro_off.y.toFixed(4);
+        document.getElementById('tdGyroOffZ').innerText = gyro_off.z.toFixed(4);
+        document.getElementById('tdGyroOffABS').innerText
+            = gyro_off.length().toFixed(4);
 
         // Magnetometer
         mag.x = parseInt(d[7]);
@@ -324,14 +350,6 @@ function onLine(line)
         document.getElementById('tdCalibMagABS').innerText
             = mag_cali.length().toFixed(0);
 
-        // Magnetometer reding ortogonal to accel
-        mag_orto.x = mag_cali_rot.x;
-        mag_orto.y = mag_cali_rot.y;
-        mag_orto.z = mag_cali_rot.z;
-        mag_orto.addScaledVector(accel,
-            - mag_cali_rot.dot(accel)
-            / accel.lengthSq())
-
         // Update the Madgwick filter
         s = {
             w_x: gyro.x,
@@ -347,8 +365,8 @@ function onLine(line)
         let mag_norm_sq = mag_cali.x*mag_cali.x
                         + mag_cali.y*mag_cali.y
                         + mag_cali.z*mag_cali.z;
-        if(0.75*mag_radius_sq < mag_norm_sq
-               && mag_norm_sq < 1.5*mag_radius_sq)
+        if(0.5*mag_radius_sq < mag_norm_sq
+              && mag_norm_sq < 2*mag_radius_sq)
         {
             update_MARG(s,frame);
             algorithm.innerText = "MARG";
@@ -363,33 +381,35 @@ function onLine(line)
         rotation.z = frame.SEq_4;
         rotation.w = frame.SEq_1;
 
-        // Rotaded calibrated magnetometer
-        mag_cali_rot.x = mag_cali.x;
-        mag_cali_rot.y = mag_cali.y;
-        mag_cali_rot.z = mag_cali.z;
-        mag_cali_rot.applyQuaternion(rotation);
-
         // Rotated acceleration
         accel_rot.x = accel.x;
         accel_rot.y = accel.y;
         accel_rot.z = accel.z;
         accel_rot.applyQuaternion(rotation);
 
+        // Rotaded calibrated magnetometer
+        mag_cali_rot.x = mag_cali.x;
+        mag_cali_rot.y = mag_cali.y;
+        mag_cali_rot.z = mag_cali.z;
+        mag_cali_rot.applyQuaternion(rotation);
+        document.getElementById('tdCaRoMagX').innerText = mag_cali_rot.x.toFixed(0);
+        document.getElementById('tdCaRoMagY').innerText = mag_cali_rot.y.toFixed(0);
+        document.getElementById('tdCaRoMagZ').innerText = mag_cali_rot.z.toFixed(0);
+        document.getElementById('tdCaRoMagABS').innerText
+            = mag_cali_rot.length().toFixed(0);
+
+        // Magnetometer reding ortogonal to accel
+        mag_orto.x = mag_cali_rot.x;
+        mag_orto.y = mag_cali_rot.y;
+        mag_orto.z = mag_cali_rot.z;
+        mag_orto.addScaledVector(accel_rot,
+            - mag_cali_rot.dot(accel_rot)
+            / accel_rot.lengthSq())
+
         render();
 
-        goodMagnet.innerText = "<br>\n" + mag.x
-                             + "<br>\n" + mag.y
-                             + "<br>\n" + mag.z;
-        
 
-//          calibrating
-//          + " "
-//          + calibrating_counter
-//          + parseInt(mag_radius);
-
-        calibrate(cd);
-//        caliCounter.innerText = magneto_data;
-        if(calibrating) {
+        if(calibrating_mag) {
             if(calibrating_counter < 1500) {
                 caliCounter.innerText = "Collecting data: " + calibrating_counter;
                 if( Math.abs(mag.x) < 1000
@@ -402,7 +422,7 @@ function onLine(line)
                     digitalPulse(LED3, 1, 100);
                 }
             } else {
-                calibrating = false;
+                calibrating_mag = false;
                 calibrating_counter = 0;
                 cd.radius = 0;
                 cd = fit_to_ellipsoid_bla(magneto_data);
@@ -410,6 +430,22 @@ function onLine(line)
                 magneto_data = [];
                 // magnetocalibration:
                 
+            }
+        }
+        if(calibrating_gyro) {
+            if(gyro_counter == 0) {
+                gyro_cali.multiplyScalar(0);
+            }
+            if(gyro_counter < 100) {
+                gyro_cali.x = gyro_cali.x + parseInt(d[4])*gyro_factor;
+                gyro_cali.y = gyro_cali.y + parseInt(d[5])*gyro_factor;
+                gyro_cali.z = gyro_cali.z + parseInt(d[6])*gyro_factor;
+                gyro_counter++;
+            } else {
+                gyro_off.multiplyScalar(0);
+                gyro_off.addScaledVector(gyro_cali,1/100);
+                gyro_counter = 0;
+                calibrating_gyro = false;
             }
         }
     }
