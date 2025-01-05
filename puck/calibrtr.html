@@ -1,0 +1,135 @@
+<html>
+ <head>
+  <title>CALIBRTR</title>
+ </head>
+ <body>
+<script src="https://www.puck-js.com/puck.js"></script>
+<script src="calibrtr.js"></script>
+<button id="btnConnect">Connect</button>
+
+<p>JSON output:</p> <p>
+<span class="bar"><span id="JSON_output"></span></span>
+
+<p>Nice output:</p> <p>
+<span class="bar"><span id="nice_output"></span></span>
+
+<p>Data:</p> <p>
+<span class="bar"><span id="data_output"></span></span>
+</p>
+
+<script>
+
+var PUCK_CODE =`
+i = 0;
+mag_freq = 80;
+acc_freq = 104;
+n = 100;
+setWatch(function() {
+  Bluetooth.println("S");
+  Puck.magOff();
+  Puck.accelOff();
+}, BTN, {edge:"rising", debounce:50});
+Puck.removeAllListeners('mag');
+Puck.on('mag', (m) => {
+  if(i%6==0)
+    digitalPulse(LED1, 1, 2000/freq)
+  if(i%6==2)
+    digitalPulse(LED2, 1, 2000/freq)
+  if(i%6==4)
+    digitalPulse(LED3, 1, 2000/freq)
+  if(i>10)
+    Bluetooth.println("M," + m.x + "," + m.y + "," + m.z + "," + i);
+  if(i<400) {
+    i++;
+  } else {
+    Bluetooth.println("S");
+    Puck.magOff();
+    Puck.accelOff();
+  }
+});
+Puck.accelOn(acc_freq);
+Puck.magOn(mag_freq);
+
+`;
+
+// When we click the connect button...
+var connection;
+document.getElementById("btnConnect").addEventListener("click", function() {
+  // disconnect if connected already
+  if (connection) {
+    connection.close();
+    connection = undefined;
+  }
+  // Connect
+  Puck.connect(function(c) {
+    if (!c) {
+      alert("Couldn't connect!");
+      return;
+    }
+    connection = c;
+    // Handle the data we get back, and call 'onLine'
+    // whenever we get a line
+    var buf = "";
+    connection.on("data", function(d) {
+      buf += d;
+      var l = buf.split("\n");
+      buf = l.pop();
+      l.forEach(onLine);
+    });
+    // First, reset
+    connection.write("reset();\n", function() {
+      // Wait for it to reset itself
+      setTimeout(function() {
+        // Now upload our code to it
+        connection.write("\x03\x10if(1){"+PUCK_CODE+"}\n",
+          function() { console.log("Ready..."); });
+      }, 1500);
+    });
+  });
+});
+
+measurements = [];
+function onLine(line) {
+  //console.log("RECEIVED:"+line);
+  var d = line.split(",");
+  if (d.length==5 && d[0]=="M") {
+    ints = [];
+    d.slice(1,4).forEach( (s) => {ints.push(parseInt(s));});
+    measurements.push(ints);
+    setText("data_output", '[' + measurements.join("],<br>[") + ']');
+  }
+  if(d.length == 1 && d[0].length == 2 && d[0][0] == "S") {
+    cali_data = fit_to_ellipse(measurements);
+    setText("JSON_output", JSON.stringify(cali_data));
+    setText("nice_output", nicify(cali_data));
+  }
+}
+
+function nicify(cali_data) {
+  s = "<tt>cali_data = {<br>" +
+      "  transl: [" +
+          cali_data.transl[0] + ", " +
+          cali_data.transl[1] + ", " +
+          cali_data.transl[2] + "],<br>" +
+      "  matrix: [[" +
+          cali_data.matrix[0][0] + ", " +
+          cali_data.matrix[0][1] + ", " +
+          cali_data.matrix[0][2] + "],<br>    [" +
+          cali_data.matrix[1][0] + ", " +
+          cali_data.matrix[1][1] + ", " +
+          cali_data.matrix[1][2] + "],<br>    [" +
+          cali_data.matrix[2][0] + ", " +
+          cali_data.matrix[2][1] + ", " +
+          cali_data.matrix[2][2] + "]],<br>" +
+      "    radius: " + cali_data.radius + "<br>"+
+      "}</tt>";
+  return s;
+}
+
+
+function setText(id,a) {
+  document.getElementById(id).innerHTML = a;
+}
+</script>
+ </body>
+</html>
