@@ -1,6 +1,6 @@
-
 function update_IMU(s,frame)
 {
+    frame.iteration++;
     a_x = s.a_x;
     a_y = s.a_y;
     a_z = s.a_z;
@@ -90,6 +90,7 @@ function update_IMU(s,frame)
 
 function update_MARG(s,frame)
 {
+    frame.iteration++;
     a_x = s.a_x;
     a_y = s.a_y;
     a_z = s.a_z;
@@ -209,9 +210,9 @@ function update_MARG(s,frame)
     w_err_y = twoSEq_1 * SEqHatDot_3 + twoSEq_2 * SEqHatDot_4 - twoSEq_3 * SEqHatDot_1 - twoSEq_4 * SEqHatDot_2;
     w_err_z = twoSEq_1 * SEqHatDot_4 - twoSEq_2 * SEqHatDot_3 + twoSEq_3 * SEqHatDot_2 - twoSEq_4 * SEqHatDot_1;
     // compute and remove the gyroscope baises
-    frame.w_bx += w_err_x * deltat * frame.zeta;
-    frame.w_by += w_err_y * deltat * frame.zeta;
-    frame.w_bz += w_err_z * deltat * frame.zeta;
+    frame.w_bx += w_err_x * frame.deltat * frame.zeta;
+    frame.w_by += w_err_y * frame.deltat * frame.zeta;
+    frame.w_bz += w_err_z * frame.deltat * frame.zeta;
     w_x -= frame.w_bx;
     w_y -= frame.w_by;
     w_z -= frame.w_bz;

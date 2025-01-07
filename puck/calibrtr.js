@@ -186,6 +186,7 @@ function fit_to_ellipsoid(R) {
     transl: v,
     matrix: A,
     radius: R,
+    eigenv: eigenvals_3x3_sym(B),
   };
   return(s);
 }
